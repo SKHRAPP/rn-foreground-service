@@ -1,10 +1,18 @@
-import { NativeModules, AppRegistry, DeviceEventEmitter } from "react-native";
+import {
+  NativeModules,
+  AppRegistry,
+  DeviceEventEmitter,
+  NativeEventEmitter,
+  Alert,
+  Platform,
+} from "react-native";
 
 // ANDROID ONLY
 // Copied and adapted from https://github.com/voximplant/react-native-foreground-service
 // and https://github.com/zo0r/react-native-push-notification/
 
-const ForegroundServiceModule = NativeModules.ForegroundService;
+const ForegroundServiceModule =
+  Platform.OS === "android" ? NativeModules.ForegroundService : null;
 
 /**
  * @property {number} id - Unique notification id
@@ -173,9 +181,14 @@ const taskRunner = async () => {
   }
 };
 
-const register = () => {
-  if (!serviceRunning)
+const register = ({ config: { alert, onServiceErrorCallBack } }) => {
+  if (!serviceRunning) {
+    setupServiceErrorListener({
+      alert,
+      onServiceFailToStart: onServiceErrorCallBack,
+    });
     return ForegroundService.registerForegroundTask("myTaskName", taskRunner);
+  }
 };
 
 const start = async ({
@@ -376,6 +389,10 @@ const get_task = (taskId) => tasks[taskId];
 const get_all_tasks = () => tasks;
 
 const eventListener = (callBack) => {
+  if (!ForegroundServiceModule) {
+    console.warn("ForegroundServiceModule is not available");
+    return () => {};
+  }
   let subscription = DeviceEventEmitter.addListener(
     "notificationClickHandle",
     callBack
@@ -385,6 +402,29 @@ const eventListener = (callBack) => {
     subscription.remove();
   };
 };
+
+const eventEmitter = ForegroundServiceModule
+  ? new NativeEventEmitter(ForegroundServiceModule)
+  : null;
+export function setupServiceErrorListener({ onServiceFailToStart, alert }) {
+  if (!eventEmitter) {
+    console.warn("ForegroundServiceModule is not available");
+    return;
+  }
+  const listener = eventEmitter.addListener("onServiceError", (message) => {
+    if (alert) {
+      // Alert.alert('Service Error', message);
+    }
+    if (onServiceFailToStart) {
+      onServiceFailToStart();
+    }
+    stop();
+  });
+
+  return () => {
+    listener.remove();
+  };
+}
 
 const ReactNativeForegroundService = {
   register,
